@@ -1,0 +1,125 @@
+# =============================================================================
+# Deployment for the ConfigMirror operator.
+#
+# Key design decisions:
+#   - 2 replicas with leader election: HA without duplicate reconciles
+#   - All security contexts enforced (non-root, read-only FS, no capabilities)
+#   - SSM paths passed as env vars (not secrets — just paths to look up)
+#   - Liveness + readiness probes so Kubernetes knows the pod is healthy
+#   - Topology spread to put replicas on different nodes
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "configmirror-operator.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "configmirror-operator.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "configmirror-operator.selectorLabels" . | nindent 6 }}
+  # RollingUpdate: bring up new pods before terminating old ones
+  # so there is always at least one replica running during upgrades.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "configmirror-operator.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Force pod restart when the ConfigMap (values) changes
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "configmirror-operator.serviceAccountName" . }}
+
+      # SECURITY: Pod-level security context
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+
+      # Spread replicas across different nodes for HA
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # Graceful shutdown: give the operator 30s to finish reconciles in flight
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: manager
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          # Operator CLI flags
+          args:
+            - "--metrics-bind-address=:{{ .Values.metrics.port }}"
+            - "--health-probe-bind-address=:8081"
+            - "--leader-elect=true"
+
+          # SECURITY: Container-level security context
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+
+          # Environment variables — SSM PATHS (not secrets), region, and namespace
+          env:
+            - name: SSM_DB_USERNAME_PATH
+              value: {{ .Values.aws.ssm.usernamePath | quote }}
+            - name: SSM_DB_PASSWORD_PATH
+              value: {{ .Values.aws.ssm.passwordPath | quote }}
+            - name: SSM_DB_ENDPOINT_PATH
+              value: {{ .Values.aws.ssm.endpointPath | quote }}
+            - name: DB_NAME
+              value: {{ .Values.db.name | quote }}
+            - name: AWS_REGION
+              value: {{ .Values.aws.region | quote }}
+            # Downward API: inject the pod's namespace so leader election
+            # can be scoped to the correct namespace
+            - name: OPERATOR_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          # SECURITY: Read-only filesystem — operator doesn't need to write to disk.
+          # The distroless image has nothing to write to anyway.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp   # controller-runtime needs a writable /tmp
+
+      volumes:
+        # Provide a writable /tmp in memory (tmpfs) — keeps the root FS read-only
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 10Mi

@@ -1,0 +1,156 @@
+---
+# This CRD YAML is installed by the Helm chart before the operator starts.
+# It teaches Kubernetes what a "ConfigMirror" object looks like —
+# its fields, types, validation rules, and how it appears in kubectl output.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: configmirrors.ops.pawapay.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: ops.pawapay.io
+  names:
+    kind: ConfigMirror
+    listKind: ConfigMirrorList
+    plural: configmirrors
+    singular: configmirror
+    shortNames:
+      - cm-mirror
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      # Columns shown by `kubectl get configmirrors`
+      additionalPrinterColumns:
+        - name: Source
+          type: string
+          jsonPath: .spec.sourceNamespace
+        - name: Targets
+          type: string
+          jsonPath: .spec.targetNamespaces
+        - name: Mirrored
+          type: integer
+          jsonPath: .status.totalMirrored
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}   # Enables separate .status updates without triggering spec reconciles
+      schema:
+        openAPIV3Schema:
+          description: ConfigMirror mirrors ConfigMaps from a source namespace
+            to one or more target namespaces, filtered by label selector,
+            and persists the data to RDS PostgreSQL.
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: ConfigMirrorSpec defines the desired state.
+              type: object
+              required:
+                - sourceNamespace
+                - targetNamespaces
+                - selector
+              properties:
+                sourceNamespace:
+                  description: Namespace to watch for ConfigMaps.
+                  type: string
+                  minLength: 1
+                targetNamespaces:
+                  description: Namespaces to mirror matching ConfigMaps into.
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    minLength: 1
+                selector:
+                  description: Label selector to filter which ConfigMaps are mirrored.
+                  type: object
+                  properties:
+                    matchLabels:
+                      description: Key-value pairs that must all match.
+                      type: object
+                      additionalProperties:
+                        type: string
+                    matchExpressions:
+                      description: Label selector requirement expressions.
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - key
+                          - operator
+                        properties:
+                          key:
+                            type: string
+                          operator:
+                            type: string
+                            enum: [In, NotIn, Exists, DoesNotExist]
+                          values:
+                            type: array
+                            items:
+                              type: string
+            status:
+              description: ConfigMirrorStatus is the observed state written by the operator.
+              type: object
+              properties:
+                totalMirrored:
+                  description: Total number of ConfigMaps currently mirrored.
+                  type: integer
+                observedGeneration:
+                  description: Generation of the spec this status reflects.
+                  type: integer
+                  format: int64
+                conditions:
+                  description: Standard Kubernetes conditions (Ready, Degraded).
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - reason
+                      - message
+                      - lastTransitionTime
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", Unknown]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                mirroredConfigMaps:
+                  description: Details of each mirrored ConfigMap.
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      sourceNamespace:
+                        type: string
+                      targetNamespace:
+                        type: string
+                      syncStatus:
+                        type: string
+                      lastSyncedAt:
+                        type: string
+                        format: date-time

@@ -1,0 +1,39 @@
+# Service exposes the operator's metrics endpoint so Prometheus can scrape it.
+# The health probe port is intentionally not exposed externally —
+# Kubernetes accesses it directly on the pod IP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "configmirror-operator.fullname" . }}-metrics
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "configmirror-operator.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "configmirror-operator.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+  type: ClusterIP   # Internal only — never exposed outside the cluster
+
+---
+# Optional: ServiceMonitor for Prometheus Operator auto-discovery
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "configmirror-operator.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "configmirror-operator.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "configmirror-operator.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+{{- end }}

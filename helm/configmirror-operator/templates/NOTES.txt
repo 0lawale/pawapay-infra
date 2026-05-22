@@ -1,0 +1,52 @@
+╔══════════════════════════════════════════════════════════════════╗
+║          ConfigMirror Operator — Installed Successfully          ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Release  : {{ .Release.Name }}
+Namespace: {{ .Values.namespace }}
+Version  : {{ .Chart.AppVersion }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Verify the operator is running:
+
+   kubectl get pods -n {{ .Values.namespace }} -l app.kubernetes.io/name={{ include "configmirror-operator.name" . }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. Create your first ConfigMirror resource:
+
+   kubectl apply -f - <<EOF
+   apiVersion: ops.pawapay.io/v1alpha1
+   kind: ConfigMirror
+   metadata:
+     name: my-config-mirror
+     namespace: {{ .Values.namespace }}
+   spec:
+     sourceNamespace: app-source
+     targetNamespaces:
+       - app-staging
+       - app-prod
+     selector:
+       matchLabels:
+         app: myservice
+   EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. Watch the operator mirror ConfigMaps:
+
+   kubectl get configmirrors -n {{ .Values.namespace }}
+   kubectl describe configmirror my-config-mirror -n {{ .Values.namespace }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. Check operator logs:
+
+   kubectl logs -n {{ .Values.namespace }} \
+     -l app.kubernetes.io/name={{ include "configmirror-operator.name" . }} \
+     --follow
+
+{{- if not .Values.serviceAccount.annotations }}
+
+⚠️  WARNING: No IRSA role ARN set on the ServiceAccount.
+   The operator will not be able to fetch credentials from SSM.
+   Set it with:
+     --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=<your-role-arn>
+{{- end }}

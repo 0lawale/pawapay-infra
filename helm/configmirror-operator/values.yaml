@@ -1,0 +1,133 @@
+# =============================================================================
+# Default values for the ConfigMirror Operator Helm chart.
+# Override these values at install time with --set or a custom values file.
+#
+# Example:
+#   helm install configmirror ./helm/configmirror-operator \
+#     --set image.repository=123456789.dkr.ecr.us-east-1.amazonaws.com/pawapay-dev/configmirror-operator \
+#     --set image.tag=v0.1.0
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Image settings
+# -----------------------------------------------------------------------------
+image:
+  # Full ECR repository URL — output of: terraform -chdir=.../ecr output -raw repository_url
+  repository: ""
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Number of operator replicas.
+# Leader election is enabled so only one replica actively reconciles at a time.
+# Run 2 for high availability (fast failover if the leader crashes).
+replicaCount: 2
+
+# -----------------------------------------------------------------------------
+# Operator namespace
+# The operator itself runs here. ConfigMirror resources are also created here.
+# -----------------------------------------------------------------------------
+namespace: ops
+
+# -----------------------------------------------------------------------------
+# AWS / SSM configuration
+# These are PATH strings — not secrets. The actual secrets live in SSM.
+# The operator fetches them at runtime via IRSA.
+# -----------------------------------------------------------------------------
+aws:
+  region: "us-east-1"
+  ssm:
+    # These paths must match what Terraform created in the RDS module
+    usernamePath: "/pawapay/dev/rds/username"
+    passwordPath: "/pawapay/dev/rds/password"
+    endpointPath: "/pawapay/dev/rds/endpoint"
+
+# Database name (not sensitive — just the logical DB name)
+db:
+  name: "configmirror"
+
+# -----------------------------------------------------------------------------
+# IRSA — IAM Role for Service Accounts
+# This is how the operator pod gets AWS credentials without storing any keys.
+# The role ARN is output by: terraform -chdir=.../eks output -raw operator_irsa_role_arn
+# -----------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: "configmirror-operator"
+  annotations:
+    # IRSA annotation: tells EKS to inject AWS credentials for this role
+    eks.amazonaws.com/role-arn: ""   # Set to your operator IRSA role ARN
+
+# -----------------------------------------------------------------------------
+# Resource limits
+# SECURITY: Always set resource limits to prevent a misbehaving operator
+# from starving other workloads on the node.
+# -----------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "200m"
+    memory: "256Mi"
+
+# -----------------------------------------------------------------------------
+# Security context
+# SECURITY: Run as non-root, read-only filesystem, drop all Linux capabilities.
+# Matches the distroless container image (uid 65532).
+# -----------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -----------------------------------------------------------------------------
+# Probes — Kubernetes uses these to check if the operator is healthy
+# -----------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# -----------------------------------------------------------------------------
+# Metrics (Prometheus)
+# -----------------------------------------------------------------------------
+metrics:
+  port: 8080
+  serviceMonitor:
+    enabled: false   # Set true if you have Prometheus Operator installed
+
+# -----------------------------------------------------------------------------
+# Pod topology — spread replicas across nodes/AZs for HA
+# -----------------------------------------------------------------------------
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: configmirror-operator
+
+# Node selector — pin to specific node groups if needed
+nodeSelector: {}
+
+# Tolerations — allow scheduling on tainted nodes if needed
+tolerations: []

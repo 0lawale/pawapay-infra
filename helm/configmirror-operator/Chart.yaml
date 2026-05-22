@@ -1,0 +1,22 @@
+apiVersion: v2
+name: configmirror-operator
+description: |
+  A Kubernetes operator that mirrors ConfigMaps from a source namespace
+  to one or more target namespaces, filtered by label selector,
+  and persists the data to RDS PostgreSQL.
+
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - configmap
+  - operator
+  - kubernetes
+  - pawapay
+
+maintainers:
+  - name: pawaPay Platform Team
+
+# Minimum Kubernetes version required
+kubeVersion: ">=1.27.0"

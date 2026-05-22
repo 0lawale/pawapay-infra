@@ -1,0 +1,75 @@
+# =============================================================================
+# RBAC for the ConfigMirror operator.
+#
+# SECURITY — Least Privilege principle:
+#   The operator is granted ONLY the exact verbs it needs on ONLY the
+#   resource types it touches. Nothing more.
+#
+#   configmirrors        : full CRUD (it owns these resources)
+#   configmirrors/status : get + update (to write reconcile results back)
+#   configmaps           : get, list, watch, create, update, patch, delete
+#                          (read source, write targets, delete stale copies)
+#   namespaces           : get, list, watch (to validate target NS exists)
+#   events               : create, patch (to emit Kubernetes events for audit)
+#   leases               : create, get, update (for leader election)
+#
+#   NOT granted: pods, deployments, secrets, nodes, or any other resources.
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "configmirror-operator.fullname" . }}
+  labels:
+    {{- include "configmirror-operator.labels" . | nindent 4 }}
+rules:
+  # Our custom resource — full lifecycle management
+  - apiGroups: ["ops.pawapay.io"]
+    resources: ["configmirrors"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Status subresource — separate from spec to avoid version conflicts
+  - apiGroups: ["ops.pawapay.io"]
+    resources: ["configmirrors/status"]
+    verbs: ["get", "update", "patch"]
+
+  # Finalizers — needed to register/remove our cleanup finalizer
+  - apiGroups: ["ops.pawapay.io"]
+    resources: ["configmirrors/finalizers"]
+    verbs: ["update"]
+
+  # ConfigMaps — read source, write targets, delete stale mirrored copies
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Namespaces — read-only, used to validate target namespaces exist
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+
+  # Events — emit audit trail events visible via `kubectl describe configmirror`
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+  # Leases — required by controller-runtime for leader election
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# Bind the ClusterRole to the operator's ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "configmirror-operator.fullname" . }}
+  labels:
+    {{- include "configmirror-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "configmirror-operator.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "configmirror-operator.serviceAccountName" . }}
+    namespace: {{ .Values.namespace }}
