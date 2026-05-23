@@ -124,8 +124,8 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           # Layer cache from ECR — speeds up builds by reusing unchanged layers
-          cache-from: type=registry,ref=${{ env.ECR_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ env.ECR_REPOSITORY }}:buildcache,mode=max
+          # cache-from: type=registry,ref=${{ env.ECR_REPOSITORY }}:buildcache
+          # cache-to: type=registry,ref=${{ env.ECR_REPOSITORY }}:buildcache,mode=max
           # Build provenance and SBOM for supply chain security
           provenance: true
           sbom: true
