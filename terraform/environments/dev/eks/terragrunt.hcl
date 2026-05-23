@@ -31,8 +31,8 @@ inputs = {
   private_subnet_ids = dependency.vpc.outputs.private_subnet_ids
   public_subnet_ids  = dependency.vpc.outputs.public_subnet_ids
 
-  kubernetes_version     = "1.29"
-  node_instance_types    = ["t3.medium"]
+  kubernetes_version     = "1.32"
+  node_instance_types    = ["m7i-flex.large"]
   node_desired_size      = 2
   node_min_size          = 1
   node_max_size          = 4

@@ -1,0 +1,40 @@
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfvars
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terragrunt cache
+**/.terragrunt-cache/
+
+# Go
+operator/vendor/
+operator/bin/
+operator/*.exe
+operator/*.test
+operator/coverage.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (extra safety net)
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*

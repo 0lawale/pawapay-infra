@@ -23,9 +23,8 @@ inputs = {
   project_name = "pawapay"
   environment  = "dev"
 
-  eks_node_role_arn = dependency.eks.outputs.node_role_arn
+eks_node_role_arn = dependency.eks.outputs.node_role_arn
 
-  # IMPORTANT: Replace with your actual GitHub org and repo name
   github_org  = "0lawale"
   github_repo = "pawapay-infra"
 }

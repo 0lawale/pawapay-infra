@@ -124,8 +124,8 @@ resource "aws_security_group" "rds" {
 # SECURITY: rds.force_ssl=1 means any connection without SSL is rejected
 # ---------------------------------------------------------------------------
 resource "aws_db_parameter_group" "this" {
-  name        = "${var.project_name}-${var.environment}-pg15"
-  family      = "postgres15"
+  name        = "${var.project_name}-${var.environment}-pg16"
+  family      = "postgres16"
   description = "Custom parameter group enforcing SSL for ${var.project_name}-${var.environment}"
 
   parameter {
@@ -159,7 +159,7 @@ resource "aws_db_instance" "this" {
 
   # Engine
   engine               = "postgres"
-  engine_version       = "15.4"
+  engine_version       = "16.3"
   instance_class       = var.db_instance_class
   parameter_group_name = aws_db_parameter_group.this.name
 
@@ -184,7 +184,7 @@ resource "aws_db_instance" "this" {
   multi_az = var.multi_az
 
   # Backups
-  backup_retention_period = 7      # Keep 7 days of automated backups
+  backup_retention_period = 0      # Keep 7 days of automated backups
   backup_window           = "03:00-04:00"
   maintenance_window      = "mon:04:00-mon:05:00"
   copy_tags_to_snapshot   = true
@@ -195,8 +195,8 @@ resource "aws_db_instance" "this" {
   final_snapshot_identifier = "${var.project_name}-${var.environment}-final-snapshot"
 
   # Monitoring
-  monitoring_interval          = 60
-  monitoring_role_arn          = aws_iam_role.rds_monitoring.arn
+  monitoring_interval          = 0
+  # monitoring_role_arn          = aws_iam_role.rds_monitoring.arn
   performance_insights_enabled = true
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
