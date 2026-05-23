@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -77,9 +78,20 @@ func NewClient(ctx context.Context, paths SSMPaths, logger *zap.Logger) (*Client
 	// -----------------------------------------------------------------------
 	// Step 3: Build the DSN — sslmode=require enforces encrypted transport.
 	// -----------------------------------------------------------------------
+	// dsn := fmt.Sprintf(
+	// 	"host=%s user=%s password=%s dbname=%s sslmode=require connect_timeout=10",
+	// 	endpoint, username, password, paths.DBName,
+	// )
+
+	// Strip port from endpoint if present (RDS returns host:port)
+	host := endpoint
+	if h, _, err := net.SplitHostPort(endpoint); err == nil {
+		host = h
+	}
+
 	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s sslmode=require connect_timeout=10",
-		endpoint, username, password, paths.DBName,
+		"host=%s port=5432 user=%s password=%s dbname=%s sslmode=require connect_timeout=10",
+		host, username, password, paths.DBName,
 	)
 
 	// -----------------------------------------------------------------------
