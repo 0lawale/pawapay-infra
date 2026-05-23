@@ -72,11 +72,11 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME}"
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "tags=${ECR_REPOSITORY}:${VERSION},${ECR_REPOSITORY}:latest" >> "$GITHUB_OUTPUT"
+            echo "tags=${ECR_REPOSITORY}:${VERSION}" >> "$GITHUB_OUTPUT"
             echo "primary_tag=${VERSION}" >> "$GITHUB_OUTPUT"
           else
             echo "version=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "tags=${ECR_REPOSITORY}:sha-${SHORT_SHA},${ECR_REPOSITORY}:latest" >> "$GITHUB_OUTPUT"
+            echo "tags=${ECR_REPOSITORY}:sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
             echo "primary_tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
