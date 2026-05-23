@@ -168,19 +168,19 @@ resource "aws_security_group" "node_group" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "Allow nodes to communicate with each other"
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    self            = true
+    description = "Allow nodes to communicate with each other"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
   }
 
   ingress {
-    description            = "Allow control plane to reach nodes (webhooks, metrics)"
-    from_port              = 1025
-    to_port                = 65535
-    protocol               = "tcp"
-    security_groups        = [aws_security_group.eks_cluster.id]
+    description     = "Allow control plane to reach nodes (webhooks, metrics)"
+    from_port       = 1025
+    to_port         = 65535
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_cluster.id]
   }
 
   egress {
@@ -203,7 +203,7 @@ resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.project_name}-${var.environment}-nodes"
   node_role_arn   = aws_iam_role.node_group.arn
-  subnet_ids      = var.private_subnet_ids  # Private subnets only
+  subnet_ids      = var.private_subnet_ids # Private subnets only
   instance_types  = var.node_instance_types
   capacity_type   = "ON_DEMAND"
 
@@ -219,7 +219,7 @@ resource "aws_eks_node_group" "this" {
 
   # SECURITY: Ensure node security group is applied
   remote_access {
-    ec2_ssh_key               = null  # No SSH access; use SSM Session Manager instead
+    ec2_ssh_key               = null # No SSH access; use SSM Session Manager instead
     source_security_group_ids = []
   }
 

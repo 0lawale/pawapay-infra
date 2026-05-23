@@ -23,8 +23,8 @@ data "aws_availability_zones" "available" {
 # ---------------------------------------------------------------------------
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
-  enable_dns_support   = true   # Required for EKS and service discovery
-  enable_dns_hostnames = true   # Required for EKS node registration
+  enable_dns_support   = true # Required for EKS and service discovery
+  enable_dns_hostnames = true # Required for EKS node registration
 
   tags = {
     Name = "${var.project_name}-${var.environment}-vpc"

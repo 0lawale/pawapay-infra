@@ -167,7 +167,7 @@ resource "aws_db_instance" "this" {
   allocated_storage     = var.allocated_storage
   max_allocated_storage = var.allocated_storage * 2 # Auto-scaling cap
   storage_type          = "gp3"
-  storage_encrypted     = true  # Encryption at rest
+  storage_encrypted     = true # Encryption at rest
   kms_key_id            = aws_kms_key.rds.arn
 
   # Credentials — pulled from random_password; NOT stored in code
@@ -178,13 +178,13 @@ resource "aws_db_instance" "this" {
   # Network — place in isolated database subnets
   db_subnet_group_name   = var.db_subnet_group_name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false  # NEVER expose RDS to the internet
+  publicly_accessible    = false # NEVER expose RDS to the internet
 
   # High Availability
   multi_az = var.multi_az
 
   # Backups
-  backup_retention_period = 0      # Keep 7 days of automated backups
+  backup_retention_period = 0 # Keep 7 days of automated backups
   backup_window           = "03:00-04:00"
   maintenance_window      = "mon:04:00-mon:05:00"
   copy_tags_to_snapshot   = true
@@ -195,9 +195,9 @@ resource "aws_db_instance" "this" {
   final_snapshot_identifier = "${var.project_name}-${var.environment}-final-snapshot"
 
   # Monitoring
-  monitoring_interval          = 0
+  monitoring_interval = 0
   # monitoring_role_arn          = aws_iam_role.rds_monitoring.arn
-  performance_insights_enabled = true
+  performance_insights_enabled    = true
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
   tags = {
