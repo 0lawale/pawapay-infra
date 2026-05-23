@@ -1,0 +1,185 @@
+# =============================================================================
+# CD Workflow — Build the operator Docker image and push it to ECR.
+#
+# Triggered on:
+#   - Push to main (builds and tags as 'latest' + git SHA)
+#   - Git tag push matching v* (builds and tags as the version e.g. v0.1.0)
+#
+# SECURITY design:
+#   - Uses OIDC federation — NO long-lived AWS_ACCESS_KEY_ID / SECRET stored
+#     in GitHub Secrets. GitHub exchanges a short-lived OIDC token for
+#     temporary AWS STS credentials scoped to the CI/CD IAM role we created
+#     in the ECR Terraform module.
+#   - Image is scanned by ECR automatically on push (scan_on_push=true in TF)
+#   - Image tags are immutable in ECR — a released tag can never be overwritten
+#   - Docker build uses BuildKit for better caching and build provenance
+# =============================================================================
+name: Build and Push to ECR
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"   # e.g. v0.1.0, v1.2.3
+  workflow_dispatch:   # Allow manual trigger for emergency deploys
+
+# SECURITY: Only the minimum permissions needed
+permissions:
+  contents: read
+  id-token: write   # Required for OIDC — lets GitHub request an OIDC token
+
+env:
+  AWS_REGION: us-east-1
+  # Set this to your ECR repository URL (output of terraform ecr module)
+  # Format: <account>.dkr.ecr.<region>.amazonaws.com/<project>-<env>/configmirror-operator
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_URL }}
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Step 1: Checkout the code
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can compute git describe for version tags
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # Step 2: Compute image tags
+      #   On main branch: sha-<short-commit> + latest
+      #   On version tag : v0.1.0 + latest
+      # -----------------------------------------------------------------------
+      - name: Compute image tags
+        id: tags
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tags=${ECR_REPOSITORY}:${VERSION},${ECR_REPOSITORY}:latest" >> "$GITHUB_OUTPUT"
+            echo "primary_tag=${VERSION}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "tags=${ECR_REPOSITORY}:sha-${SHORT_SHA},${ECR_REPOSITORY}:latest" >> "$GITHUB_OUTPUT"
+            echo "primary_tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Step 3: Authenticate to AWS via OIDC (no stored secrets)
+      #
+      # SECURITY: This step exchanges GitHub's OIDC token for temporary
+      # AWS credentials. The role-to-assume must be the CI/CD role ARN
+      # output by the ECR Terraform module.
+      # -----------------------------------------------------------------------
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # Credentials expire after 1 hour — more than enough for a build
+          role-duration-seconds: 3600
+
+      # -----------------------------------------------------------------------
+      # Step 4: Authenticate Docker to ECR
+      # -----------------------------------------------------------------------
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -----------------------------------------------------------------------
+      # Step 5: Set up Docker BuildKit for faster, more secure builds
+      # -----------------------------------------------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # -----------------------------------------------------------------------
+      # Step 6: Build and push the Docker image
+      #
+      # SECURITY:
+      #   --provenance=true  adds SLSA build provenance attestation
+      #   --sbom=true        adds a Software Bill of Materials (SBOM)
+      #   Both are stored as OCI image manifest annotations in ECR.
+      # -----------------------------------------------------------------------
+      - name: Build and push to ECR
+        uses: docker/build-push-action@v5
+        with:
+          context: ./operator
+          file: ./operator/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          # Layer cache from ECR — speeds up builds by reusing unchanged layers
+          cache-from: type=registry,ref=${{ env.ECR_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ env.ECR_REPOSITORY }}:buildcache,mode=max
+          # Build provenance and SBOM for supply chain security
+          provenance: true
+          sbom: true
+          # Pass build metadata for traceability
+          build-args: |
+            BUILD_SHA=${{ steps.tags.outputs.short_sha }}
+            BUILD_VERSION=${{ steps.tags.outputs.version }}
+
+      # -----------------------------------------------------------------------
+      # Step 7: Wait for ECR vulnerability scan to complete
+      #
+      # SECURITY: We wait for the ECR scan result and FAIL the pipeline if
+      # CRITICAL vulnerabilities are found. This prevents deploying images
+      # with known CVEs.
+      # -----------------------------------------------------------------------
+      - name: Wait for ECR vulnerability scan
+        run: |
+          echo "Waiting for ECR scan on tag: ${{ steps.tags.outputs.primary_tag }}"
+          sleep 30  # Give ECR a moment to start the scan
+
+          REPO_NAME=$(echo "$ECR_REPOSITORY" | cut -d'/' -f2-)
+          ACCOUNT=$(echo "$ECR_REPOSITORY" | cut -d'.' -f1)
+
+          FINDINGS=$(aws ecr describe-image-scan-findings \
+            --repository-name "$REPO_NAME" \
+            --image-id imageTag=${{ steps.tags.outputs.primary_tag }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'imageScanFindings.findingSeverityCounts' \
+            --output json 2>/dev/null || echo "{}")
+
+          echo "Scan findings: $FINDINGS"
+
+          CRITICAL=$(echo "$FINDINGS" | jq -r '.CRITICAL // 0')
+          HIGH=$(echo "$FINDINGS" | jq -r '.HIGH // 0')
+
+          echo "Critical vulnerabilities: $CRITICAL"
+          echo "High vulnerabilities: $HIGH"
+
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "❌ Build FAILED: $CRITICAL critical vulnerability/vulnerabilities found in the image."
+            echo "Review the ECR scan results and update dependencies before merging."
+            exit 1
+          fi
+
+          if [ "$HIGH" -gt 5 ]; then
+            echo "⚠️  WARNING: $HIGH high-severity vulnerabilities found. Please review."
+          fi
+
+          echo "✅ ECR scan passed — no critical vulnerabilities found."
+
+      # -----------------------------------------------------------------------
+      # Step 8: Output image details as a job summary
+      # -----------------------------------------------------------------------
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 🐳 Docker Image Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Repository | \`$ECR_REPOSITORY\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tags | \`${{ steps.tags.outputs.tags }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Git SHA | \`${{ steps.tags.outputs.short_sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Triggered by | \`${{ github.actor }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Workflow run | [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,145 @@
+# =============================================================================
+# Deploy Workflow — deploys the operator to EKS using Helm.
+#
+# Triggered automatically after the Build and Push workflow succeeds on main,
+# or manually for a specific image tag.
+#
+# SECURITY:
+#   - Same OIDC pattern — no stored AWS keys
+#   - Helm upgrade is atomic: rolls back automatically if health checks fail
+#   - kubeconfig is written to a temp file, never exposed as an env var
+# =============================================================================
+name: Deploy to EKS
+
+on:
+  # Run automatically after the build workflow succeeds on main
+  workflow_run:
+    workflows: ["Build and Push to ECR"]
+    types: [completed]
+    branches: [main]
+
+  # Allow manual deploy with a specific image tag
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (e.g. v0.1.0 or sha-abc1234)"
+        required: true
+        default: "latest"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: pawapay-dev
+  HELM_RELEASE_NAME: configmirror
+  HELM_NAMESPACE: ops
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_URL }}
+
+jobs:
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    # Only deploy if the triggering workflow succeeded (or if manually triggered)
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Resolve the image tag to deploy
+      # -----------------------------------------------------------------------
+      - name: Resolve image tag
+        id: resolve-tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          else
+            TAG="sha-$(git rev-parse --short ${{ github.event.workflow_run.head_sha }})"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Deploying image tag: ${TAG}"
+
+      # -----------------------------------------------------------------------
+      # Authenticate to AWS via OIDC
+      # -----------------------------------------------------------------------
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # -----------------------------------------------------------------------
+      # Set up kubectl — update kubeconfig for our EKS cluster
+      # -----------------------------------------------------------------------
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      # -----------------------------------------------------------------------
+      # Set up Helm
+      # -----------------------------------------------------------------------
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      # -----------------------------------------------------------------------
+      # Ensure the ops namespace exists
+      # -----------------------------------------------------------------------
+      - name: Ensure namespace exists
+        run: |
+          kubectl get namespace ${{ env.HELM_NAMESPACE }} || \
+          kubectl create namespace ${{ env.HELM_NAMESPACE }}
+
+      # -----------------------------------------------------------------------
+      # Deploy with Helm
+      #
+      # --atomic     : if the upgrade fails health checks, auto-rollback
+      # --timeout    : give pods 3 minutes to become ready
+      # --wait       : wait for all pods to be Ready before considering success
+      # -----------------------------------------------------------------------
+      - name: Helm upgrade/install
+        run: |
+          helm upgrade ${{ env.HELM_RELEASE_NAME }} ./helm/configmirror-operator \
+            --install \
+            --namespace ${{ env.HELM_NAMESPACE }} \
+            --create-namespace \
+            --atomic \
+            --timeout 3m \
+            --wait \
+            --set image.repository=${{ env.ECR_REPOSITORY }} \
+            --set image.tag=${{ steps.resolve-tag.outputs.tag }} \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${{ secrets.OPERATOR_IRSA_ROLE_ARN }} \
+            --set aws.ssm.usernamePath=${{ secrets.SSM_USERNAME_PATH }} \
+            --set aws.ssm.passwordPath=${{ secrets.SSM_PASSWORD_PATH }} \
+            --set aws.ssm.endpointPath=${{ secrets.SSM_ENDPOINT_PATH }}
+
+      # -----------------------------------------------------------------------
+      # Post-deploy verification
+      # -----------------------------------------------------------------------
+      - name: Verify deployment
+        run: |
+          echo "📋 Operator pods:"
+          kubectl get pods -n ${{ env.HELM_NAMESPACE }} \
+            -l app.kubernetes.io/name=configmirror-operator
+
+          echo ""
+          echo "📋 Helm release status:"
+          helm status ${{ env.HELM_RELEASE_NAME }} -n ${{ env.HELM_NAMESPACE }}
+
+      - name: Write deployment summary
+        if: always()
+        run: |
+          echo "## 🚀 Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Cluster | \`${{ env.EKS_CLUSTER_NAME }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Namespace | \`${{ env.HELM_NAMESPACE }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image tag | \`${{ steps.resolve-tag.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deployed by | \`${{ github.actor }}\` |" >> "$GITHUB_STEP_SUMMARY"
