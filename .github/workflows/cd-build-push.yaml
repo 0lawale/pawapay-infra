@@ -75,6 +75,7 @@ jobs:
             echo "tags=${ECR_REPOSITORY}:${VERSION}" >> "$GITHUB_OUTPUT"
             echo "primary_tag=${VERSION}" >> "$GITHUB_OUTPUT"
           else
+          
             echo "version=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
             echo "tags=${ECR_REPOSITORY}:sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
             echo "primary_tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
