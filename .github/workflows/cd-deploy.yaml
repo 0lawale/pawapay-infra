@@ -12,19 +12,32 @@
 name: Deploy to EKS
 
 on:
-  # Run automatically after the build workflow succeeds on main
   workflow_run:
     workflows: ["Build and Push to ECR"]
     types: [completed]
     branches: [main]
-
-  # Allow manual deploy with a specific image tag
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Image tag to deploy (e.g. v0.1.0 or sha-abc1234)"
+        description: "Image tag to deploy"
         required: true
         default: "latest"
+# on:
+#   # Run automatically after the build workflow succeeds on main
+#   workflow_run:
+#     workflows: ["Build and Push to ECR"]
+#     types: [completed]
+#     branches: [main]
+
+  # Allow manual deploy with a specific image tag
+  # workflow_dispatch:
+  #   inputs:
+  #     image_tag:
+  #       description: "Image tag to deploy (e.g. v0.1.0 or sha-abc1234)"
+  #       required: true
+  #       default: "latest"
 
 permissions:
   contents: read
@@ -51,16 +64,27 @@ jobs:
       # -----------------------------------------------------------------------
       # Resolve the image tag to deploy
       # -----------------------------------------------------------------------
+
       - name: Resolve image tag
         id: resolve-tag
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             TAG="${{ github.event.inputs.image_tag }}"
           else
-            TAG="sha-$(git rev-parse --short ${{ github.event.workflow_run.head_sha }})"
+            TAG="sha-$(git rev-parse --short HEAD)"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Deploying image tag: ${TAG}"
+      # - name: Resolve image tag
+      #   id: resolve-tag
+      #   run: |
+      #     if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+      #       TAG="${{ github.event.inputs.image_tag }}"
+      #     else
+      #       TAG="sha-$(git rev-parse --short ${{ github.event.workflow_run.head_sha }})"
+      #     fi
+      #     echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+      #     echo "Deploying image tag: ${TAG}"
 
       # -----------------------------------------------------------------------
       # Authenticate to AWS via OIDC
