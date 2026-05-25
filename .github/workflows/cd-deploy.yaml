@@ -137,7 +137,7 @@ jobs:
             --wait \
             --set image.repository=${{ env.ECR_REPOSITORY }} \
             --set image.tag=${{ steps.resolve-tag.outputs.tag }} \
-            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${{ steps.tf-outputs.outputs.irsa_arn }} \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${{ secrets.OPERATOR_IRSA_ROLE_ARN }} \
             --set aws.ssm.usernamePath=${{ secrets.SSM_USERNAME_PATH }} \
             --set aws.ssm.passwordPath=${{ secrets.SSM_PASSWORD_PATH }} \
             --set aws.ssm.endpointPath=${{ secrets.SSM_ENDPOINT_PATH }}
