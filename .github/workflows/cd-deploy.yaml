@@ -133,7 +133,6 @@ jobs:
             --install \
             --namespace ${{ env.HELM_NAMESPACE }} \
             --create-namespace \
-            --atomic \
             --timeout 8m \
             --wait \
             --set image.repository=${{ env.ECR_REPOSITORY }} \
