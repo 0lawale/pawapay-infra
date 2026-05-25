@@ -41,7 +41,7 @@ resource "aws_kms_alias" "ecr" {
 resource "aws_ecr_repository" "this" {
   name                 = "${var.project_name}-${var.environment}/configmirror-operator"
   image_tag_mutability = "IMMUTABLE" # SECURITY: tags cannot be overwritten; enforces image provenance
-  force_delete = true
+  force_delete         = true
 
   # SECURITY: Scan every image on push for vulnerabilities
   image_scanning_configuration {
