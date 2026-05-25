@@ -19,33 +19,33 @@
 # -----------------------------------------------------------------------------
 
 
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.27"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
-  }
-}
+# terraform {
+#   required_providers {
+#     aws = {
+#       source  = "hashicorp/aws"
+#       version = "~> 5.0"
+#     }
+#     kubernetes = {
+#       source  = "hashicorp/kubernetes"
+#       version = "~> 2.27"
+#     }
+#     tls = {
+#       source  = "hashicorp/tls"
+#       version = "~> 4.0"
+#     }
+#   }
+# }
 
-provider "kubernetes" {
-  host                   = aws_eks_cluster.this.endpoint
-  cluster_ca_certificate = base64decode(aws_eks_cluster.this.certificate_authority[0].data)
+# provider "kubernetes" {
+#   host                   = aws_eks_cluster.this.endpoint
+#   cluster_ca_certificate = base64decode(aws_eks_cluster.this.certificate_authority[0].data)
 
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", aws_eks_cluster.this.name]
-  }
-}
+#   exec {
+#     api_version = "client.authentication.k8s.io/v1beta1"
+#     command     = "aws"
+#     args        = ["eks", "get-token", "--cluster-name", aws_eks_cluster.this.name]
+#   }
+# }
 
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
@@ -286,28 +286,56 @@ resource "aws_iam_role" "operator_irsa" {
 # ---------------------------------------------------------------------------
 # aws-auth ConfigMap — grants CI/CD role access to deploy to the cluster
 # ---------------------------------------------------------------------------
-resource "kubernetes_config_map_v1_data" "aws_auth" {
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
+# resource "kubernetes_config_map_v1_data" "aws_auth" {
+#   metadata {
+#     name      = "aws-auth"
+#     namespace = "kube-system"
+#   }
+
+#   force = true
+
+#   data = {
+#     mapRoles = yamlencode([
+#       {
+#         rolearn  = aws_iam_role.node_group.arn
+#         username = "system:node:{{EC2PrivateDNSName}}"
+#         groups   = ["system:bootstrappers", "system:nodes"]
+#       },
+#       {
+#         rolearn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-cicd-ecr-role"
+#         username = "cicd-role"
+#         groups   = ["system:masters"]
+#       }
+#     ])
+#   }
+
+#   depends_on = [aws_eks_cluster.this]
+# }
+resource "null_resource" "aws_auth" {
+  triggers = {
+    cluster_name  = aws_eks_cluster.this.name
+    node_role_arn = aws_iam_role.node_group.arn
   }
 
-  force = true
-
-  data = {
-    mapRoles = yamlencode([
-      {
-        rolearn  = aws_iam_role.node_group.arn
-        username = "system:node:{{EC2PrivateDNSName}}"
-        groups   = ["system:bootstrappers", "system:nodes"]
-      },
-      {
-        rolearn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-cicd-ecr-role"
-        username = "cicd-role"
-        groups   = ["system:masters"]
-      }
-    ])
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --name ${aws_eks_cluster.this.name} --region ${var.aws_region} && \
+      kubectl patch configmap aws-auth -n kube-system --patch "$(cat <<EOF
+data:
+  mapRoles: |
+    - rolearn: ${aws_iam_role.node_group.arn}
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+    - rolearn: arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-cicd-ecr-role
+      username: cicd-role
+      groups:
+        - system:masters
+EOF
+)"
+    EOT
   }
 
-  depends_on = [aws_eks_cluster.this]
+  depends_on = [aws_eks_cluster.this, aws_eks_node_group.this]
 }

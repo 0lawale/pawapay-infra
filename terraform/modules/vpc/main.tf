@@ -202,6 +202,7 @@ resource "aws_db_subnet_group" "this" {
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/aws/vpc/${var.project_name}-${var.environment}/flow-logs"
   retention_in_days = 90
+  skip_destroy = false
 
   tags = {
     Name = "${var.project_name}-${var.environment}-vpc-flow-logs"

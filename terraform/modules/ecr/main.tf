@@ -235,7 +235,7 @@ resource "aws_iam_role_policy" "cicd_ecr" {
           "eks:DescribeCluster",
           "eks:ListClusters"
         ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:cluster/*"
+        Resource = "arn:aws:eks:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:cluster/*"
       }
     ]
   })
