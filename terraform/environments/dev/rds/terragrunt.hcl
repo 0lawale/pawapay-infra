@@ -26,6 +26,7 @@ dependency "eks" {
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
   mock_outputs = {
     node_security_group_id = "sg-00000000"
+    cluster_security_group_id = "sg-00000001"
   }
 }
 
@@ -36,6 +37,7 @@ inputs = {
   vpc_id                     = dependency.vpc.outputs.vpc_id
   db_subnet_group_name       = dependency.vpc.outputs.db_subnet_group_name
   eks_node_security_group_id = dependency.eks.outputs.node_security_group_id
+  eks_cluster_security_group_id = dependency.eks.outputs.cluster_security_group_id
 
   db_name           = "configmirror"
   db_username       = "configmirror_admin"

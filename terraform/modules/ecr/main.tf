@@ -41,6 +41,7 @@ resource "aws_kms_alias" "ecr" {
 resource "aws_ecr_repository" "this" {
   name                 = "${var.project_name}-${var.environment}/configmirror-operator"
   image_tag_mutability = "IMMUTABLE" # SECURITY: tags cannot be overwritten; enforces image provenance
+  force_delete = true
 
   # SECURITY: Scan every image on push for vulnerabilities
   image_scanning_configuration {
@@ -172,6 +173,37 @@ resource "aws_iam_role" "cicd" {
   })
 }
 
+# resource "aws_iam_role_policy" "cicd_ecr" {
+#   name = "cicd-ecr-push-policy"
+#   role = aws_iam_role.cicd.id
+
+#   policy = jsonencode({
+#     Version = "2012-10-17"
+#     Statement = [
+#       {
+#         Effect = "Allow"
+#         Action = "ecr:GetAuthorizationToken"
+#         # GetAuthorizationToken is account-level, not resource-level
+#         Resource = "*"
+#       },
+#       {
+#         Effect = "Allow"
+#         Action = [
+#           "ecr:GetDownloadUrlForLayer",
+#           "ecr:BatchGetImage",
+#           "ecr:BatchCheckLayerAvailability",
+#           "ecr:PutImage",
+#           "ecr:InitiateLayerUpload",
+#           "ecr:UploadLayerPart",
+#           "ecr:CompleteLayerUpload"
+#         ]
+#         # Scoped to only this specific repository
+#         Resource = aws_ecr_repository.this.arn
+#       }
+#     ]
+#   })
+# }
+
 resource "aws_iam_role_policy" "cicd_ecr" {
   name = "cicd-ecr-push-policy"
   role = aws_iam_role.cicd.id
@@ -180,9 +212,8 @@ resource "aws_iam_role_policy" "cicd_ecr" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = "ecr:GetAuthorizationToken"
-        # GetAuthorizationToken is account-level, not resource-level
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
         Resource = "*"
       },
       {
@@ -196,8 +227,15 @@ resource "aws_iam_role_policy" "cicd_ecr" {
           "ecr:UploadLayerPart",
           "ecr:CompleteLayerUpload"
         ]
-        # Scoped to only this specific repository
         Resource = aws_ecr_repository.this.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeCluster",
+          "eks:ListClusters"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:cluster/*"
       }
     ]
   })

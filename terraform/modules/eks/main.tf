@@ -18,6 +18,35 @@
 #   - EKS secrets encryption uses a dedicated KMS key
 # -----------------------------------------------------------------------------
 
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.27"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+  }
+}
+
+provider "kubernetes" {
+  host                   = aws_eks_cluster.this.endpoint
+  cluster_ca_certificate = base64decode(aws_eks_cluster.this.certificate_authority[0].data)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", aws_eks_cluster.this.name]
+  }
+}
+
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 
@@ -228,4 +257,57 @@ resource "aws_eks_node_group" "this" {
     aws_iam_role_policy_attachment.node_cni_policy,
     aws_iam_role_policy_attachment.node_ecr_readonly,
   ]
+}
+
+# ---------------------------------------------------------------------------
+# IRSA Role for the ConfigMirror Operator pod
+# ---------------------------------------------------------------------------
+resource "aws_iam_role" "operator_irsa" {
+  name = "${var.project_name}-${var.environment}-configmirror-operator"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.eks.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${aws_iam_openid_connect_provider.eks.url}:sub" = "system:serviceaccount:ops:configmirror-operator"
+          "${aws_iam_openid_connect_provider.eks.url}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# aws-auth ConfigMap — grants CI/CD role access to deploy to the cluster
+# ---------------------------------------------------------------------------
+resource "kubernetes_config_map_v1_data" "aws_auth" {
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+
+  force = true
+
+  data = {
+    mapRoles = yamlencode([
+      {
+        rolearn  = aws_iam_role.node_group.arn
+        username = "system:node:{{EC2PrivateDNSName}}"
+        groups   = ["system:bootstrappers", "system:nodes"]
+      },
+      {
+        rolearn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-cicd-ecr-role"
+        username = "cicd-role"
+        groups   = ["system:masters"]
+      }
+    ])
+  }
+
+  depends_on = [aws_eks_cluster.this]
 }

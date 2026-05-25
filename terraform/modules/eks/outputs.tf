@@ -32,3 +32,13 @@ output "node_role_arn" {
   description = "IAM role ARN of the EKS node group"
   value       = aws_iam_role.node_group.arn
 }
+
+output "operator_irsa_role_arn" {
+  description = "ARN of the IRSA role for the ConfigMirror operator pod"
+  value       = aws_iam_role.operator_irsa.arn
+}
+
+output "cluster_security_group_id" {
+  description = "EKS-managed cluster security group attached to all pods"
+  value       = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+}

@@ -62,3 +62,8 @@ variable "skip_final_snapshot" {
   type        = bool
   default     = true
 }
+
+variable "eks_cluster_security_group_id" {
+  description = "EKS cluster-managed security group ID"
+  type        = string
+}
