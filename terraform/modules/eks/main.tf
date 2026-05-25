@@ -283,6 +283,26 @@ resource "aws_iam_role" "operator_irsa" {
   })
 }
 
+resource "aws_iam_role_policy" "configmirror_ssm" {
+  name = "ssm-parameter-access"
+  role = aws_iam_role.operator_irsa.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/pawapay/${var.environment}/rds/*"
+      }
+    ]
+  })
+}
+
 # ---------------------------------------------------------------------------
 # aws-auth ConfigMap — grants CI/CD role access to deploy to the cluster
 # ---------------------------------------------------------------------------
