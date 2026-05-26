@@ -298,11 +298,18 @@ resource "aws_iam_role_policy" "configmirror_ssm" {
           "ssm:GetParametersByPath"
         ]
         Resource = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/pawapay/${var.environment}/rds/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
       }
     ]
   })
 }
-
 # ---------------------------------------------------------------------------
 # aws-auth ConfigMap — grants CI/CD role access to deploy to the cluster
 # ---------------------------------------------------------------------------
